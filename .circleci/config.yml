@@ -28,6 +28,7 @@ jobs:
             . venv/bin/activate
             pip install datastack --upgrade
             pip install mlgym --upgrade
+            pip install outlier-hub --upgrade
             pip install pytest-cov            
             pip install -e src/
             pip install codecov
