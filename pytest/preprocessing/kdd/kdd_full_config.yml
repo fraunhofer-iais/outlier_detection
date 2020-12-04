@@ -1,0 +1,193 @@
+kdd_factory: 
+  component_type_key: DATASET_FACTORY
+  variant_key: KDD
+  config:
+    train_set_path: ./raw_datasets/nsl_kdd/KDDTrain+.txt
+    test_set_path: ./raw_datasets/nsl_kdd/KDDTest+.txt
+    attack_type_mapping_path: ./raw_datasets/nsl_kdd/attack_types.json
+    feature_and_target_names_path: ./raw_datasets/nsl_kdd/kddcup.names
+    storage_connector_path: ./file_storage/
+
+dataset_repository: 
+  component_type_key: DATASET_REPOSITORY
+  variant_key: DEFAULT
+  config:
+    storage_connector_path: ./file_storage/
+  requirements:
+    - name: kdd_factory
+      component_name: kdd_factory
+
+dataset_iterators: 
+  component_type_key: DATASET_ITERATORS
+  variant_key: DEFAULT
+  requirements:
+    - name: repository
+      component_name: dataset_repository
+  config:
+    dataset_identifier: kdd
+    splits: [train, test]
+
+mapped_to_main_attack_labels_iterator:
+  component_type_key: MAPPED_LABELS_ITERATOR
+  variant_key: DEFAULT
+  requirements:
+    - name: iterators
+      component_name: dataset_iterators
+      subscriptions: [train, test]
+  config:
+    mappings:
+      - previous_labels:
+          [
+            snmpguess,
+            ftp_write,
+            xlock,
+            sendmail,
+            snmpgetattack,
+            imap,
+            spy,
+            multihop,
+            named,
+            phf,
+            warezclient,
+            httptunnel,
+            guess_passwd,
+            warezmaster,
+            xsnoop,
+          ]
+        new_label: R2L
+      - previous_labels:
+          [sqlattack, rootkit, buffer_overflow, xterm, loadmodule, ps, perl]
+        new_label: U2R
+      - previous_labels: [satan, mscan, ipsweep, nmap, saint, portsweep]
+        new_label: PROBE
+      - previous_labels:
+          [
+            mailbomb,
+            smurf,
+            worm,
+            udpstorm,
+            processtable,
+            apache2,
+            land,
+            teardrop,
+            pod,
+            neptune,
+            back,
+          ]
+        new_label: DOS
+    applicable_splits: [train, test]
+
+mapped_to_outlier_labels_iterator: 
+  component_type_key: MAPPED_LABELS_ITERATOR
+  variant_key: DEFAULT
+  requirements:
+    - name: iterators
+      component_name: mapped_to_main_attack_labels_iterator
+      subscriptions: [train, test]
+  config:
+    mappings:
+      - previous_labels: [normal]
+        new_label: 0 # inlier
+      - previous_labels: [R2L, U2R, PROBE, DOS]
+        new_label: 1 # outlier
+    applicable_splits: [train, test]
+
+combined_dataset_iterators: 
+  component_type_key: COMBINED_DATASET_ITERATORS
+  variant_key: DEFAULT
+  requirements:
+    - name: iterators
+      component_name: mapped_to_outlier_labels_iterator
+      subscription: [train, test]
+  config:
+    combine_configs:
+      full: [train, test]
+
+feature_encoded_iterators: 
+  component_type_key: FEATURE_ENCODED_ITERATORS
+  variant_key: DEFAULT
+  requirements:
+    - name: iterators
+      component_name: combined_dataset_iterators
+      subscription: [train, test, full]
+  config:
+    applicable_splits: [train, test]
+    feature_encoding_configs:
+      - feature_type: categorical
+        train_split: full # for categorial variables we need to use the entire dataset
+        feature_names: [1, 2, 3, 6, 11, 20, 21]
+      - feature_type: continuous
+        train_split: train # continuous variables are scaled only with the train set
+        feature_names:
+          [
+            0,
+            4,
+            5,
+            7,
+            8,
+            9,
+            10,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36,
+            37,
+            38,
+            39,
+            40,
+          ]
+
+splitted_dataset_iterators: 
+  component_type_key: SPLITTED_DATASET_ITERATORS
+  variant_key: RANDOM
+  requirements:
+    - name: iterators
+      component_name: feature_encoded_iterators
+      subscription: [train, test]
+  config:
+    split_configs:
+      train:
+        train: 0.7
+        val: 0.3
+
+data_collator: 
+  component_type_key: DATA_COLLATOR
+  variant_key: DEFAULT
+  config:
+    collator_type:
+      injectable:
+        id: id_mlp_standard_collator
+    collator_params:
+      target_publication_key: label_partition
+
+data_loaders: 
+  component_type_key: DATA_LOADER
+  variant_key: DEFAULT
+  requirements:
+    - name: iterators
+      component_name: splitted_dataset_iterators
+      subscription: [train, val, test]
+    - name: data_collator
+      component_name: data_collator
+  config:
+    batch_size: 10
+    weigthed_sampling_split_name: null

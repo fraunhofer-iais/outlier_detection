@@ -8,7 +8,7 @@ This repository contains the code base for the following papers:
 | Supervised Autoencoder Variants for End to End Anomaly Detection | Max Lübbering, Michael Gebauer, Rajkumar Ramamurthy, Rafet Sifa, Christian Bauckhage | ICPR Workshop on Deep Learning for Pattern Recognition | 2020 | 
 
 
-# Reproduction
+## Reproduction
 
 The easiest way to reproduce our results is to clone the respository and install the src.
 
@@ -19,11 +19,11 @@ pip install src/
 
 Each paper documentation linked in the table above, contains further instruction to reproduce the respective results. 
 
-# Contributors
+## Contributors
 
 Max Lübbering, Rajkumar Ramamurthy, Michael Gebauer
 
-# Copyright
+## Copyright
 
 Copyright (c) 2020 Fraunhofer IAIS
 

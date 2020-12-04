@@ -1,0 +1,345 @@
+global_config:
+  storage_connector_path: &storage_path_anchor ./file_storage/
+  seed: &seed_value 2
+  split_seed: &split_seed 2
+  target_class_key: &target_class_key_anchor target_class_key
+  model_prediction_key: &model_prediction_key_anchor model_raw_prediction
+  # postprocessing publication keys
+  postprocessing_sigmoidal_key: &postprocessing_sigmoidal_key_anchor postprocessing_sigmoidal_key
+  postprocessing_binarization_key: &postprocessing_binarization_key_anchor postprocessing_binarization_key
+
+dataset_repository:
+  component_type_key: DATASET_REPOSITORY
+  variant_key: DEFAULT
+  config:
+    storage_connector_path: *storage_path_anchor
+
+dataset_iterators:
+  component_type_key: DATASET_ITERATORS
+  variant_key: DEFAULT
+  requirements:
+    - name: repository
+      component_name: dataset_repository
+  config:
+    dataset_identifier: arr
+    splits: [full]
+
+filtered_labels_iterator:
+  component_type_key: FILTERED_LABELS_ITERATOR
+  variant_key: DEFAULT
+  requirements:
+    - name: iterators
+      component_name: dataset_iterators
+      subscriptions: [full]
+  config:
+    filtered_labels:
+      - 1
+      - 3
+      - 4
+      - 5
+      - 7
+      - 8
+      - 9
+      - 14
+      - 15
+    applicable_splits: [full]
+
+mapped_labels_iterator: 
+  component_type_key: MAPPED_LABELS_ITERATOR
+  variant_key: DEFAULT
+  requirements:
+    - name: iterators
+      component_name: filtered_labels_iterator
+      subscriptions: [full]
+  config:
+    mappings:
+      - previous_labels:
+          - 1
+        new_label: 0
+      - previous_labels:
+          - 3
+          - 4
+          - 5
+          - 7
+          - 8
+          - 9
+          - 14
+          - 15
+        new_label: 1
+    applicable_splits: [full]
+
+splitted_dataset_iterators: 
+  component_type_key: SPLITTED_DATASET_ITERATORS
+  variant_key: RANDOM
+  requirements:
+    - name: iterators
+      component_name: mapped_labels_iterator
+      subscription:
+        - full
+  config:
+    split_configs:
+      full:
+        train: 0.6
+        val: 0.2
+        test: 0.2
+    seed: *split_seed
+
+combined_dataset_iterators: 
+  component_type_key: COMBINED_DATASET_ITERATORS
+  variant_key: DEFAULT
+  requirements:
+    - name: iterators
+      component_name: splitted_dataset_iterators
+      subscription: [train, val, test]
+  config:
+    combine_configs:
+      full: [train, val, test]
+
+feature_encoded_iterators: 
+  component_type_key: FEATURE_ENCODED_ITERATORS
+  variant_key: DEFAULT
+  requirements:
+    - name: iterators
+      component_name: combined_dataset_iterators
+      subscription: [train, val, test, full]
+  config:
+    applicable_splits: [train, val, test]
+    feature_encoding_configs:
+      - feature_type: categorical 
+        train_split: full 
+        feature_names: [1, 
+                        21, 22, 23, 24, 25, 26, 
+                        33, 34, 35, 36, 37, 38,
+                        45, 46, 47, 48, 49, 50,
+                        57, 58, 59, 60, 61, 62,
+                        69, 70, 71, 72, 73, 74,
+                        81, 82, 83, 84, 85, 86,
+                        93, 94, 95, 96, 97, 98,
+                        105, 106, 107, 108, 109, 110,
+                        117, 118, 119, 120, 121, 122,
+                        129, 130, 131, 132, 133, 134,
+                        141, 142, 143, 144, 145, 146,
+                        153, 154, 155, 156, 157, 158]
+      - feature_type: continuous 
+        train_split: train
+        feature_names:  [ 0,  2,  
+                          3,  4,  5,  6,  7,  8, 
+                          9, 10, 11, 12, 13, 14,
+                          15, 16, 17, 18, 19, 20, 
+                          27, 28, 29, 30, 31, 32, 
+                          39, 40, 41, 42, 43, 44,
+                          51, 52, 53, 54, 55, 56,
+                          63, 64, 65, 66, 67, 68,
+                          75, 76, 77, 78, 79, 80,
+                          87, 88, 89, 90, 91, 92,
+                          99, 100, 101, 102, 103, 104,
+                          111, 112, 113, 114, 115, 116,
+                          123, 124, 125, 126, 127, 128,
+                          135, 136, 137, 138, 139, 140,
+                          147, 148, 149, 150, 151, 152,
+                          159, 160, 161, 162, 163, 164,
+                          165, 166, 167, 168, 169, 170,
+                          171, 172, 173, 174, 175, 176, 
+                          177, 178, 179, 180, 181, 182, 
+                          183, 184, 185, 186, 187, 188, 
+                          189, 190, 191, 192, 193, 194, 
+                          195, 196, 197, 198, 199, 200, 
+                          201, 202, 203, 204, 205, 206, 
+                          207, 208, 209, 210, 211, 212, 
+                          213, 214, 215, 216, 217, 218, 
+                          219, 220, 221, 222, 223, 224, 
+                          225, 226, 227, 228, 229, 230, 
+                          231, 232, 233, 234, 235, 236, 
+                          237, 238, 239, 240, 241, 242, 
+                          243, 244, 245, 246, 247, 248, 
+                          249, 250, 251, 252, 253, 254, 
+                          255, 256, 257, 258, 259, 260, 
+                          261, 262, 263, 264, 265, 266, 
+                          267, 268, 269, 270, 271, 272, 
+                          273, 274, 275, 276, 277, 278]
+
+data_collator: 
+  component_type_key: DATA_COLLATOR
+  variant_key: DEFAULT
+  config:
+    collator_type:
+      injectable:
+        id: id_mlp_standard_collator
+    collator_params:
+      target_publication_key: *target_class_key_anchor
+
+data_loaders: 
+  component_type_key: DATA_LOADER
+  variant_key: DEFAULT
+  requirements:
+    - name: iterators
+      component_name: feature_encoded_iterators
+      subscription: [train, val, test]
+    - name: data_collator
+      component_name: data_collator
+  config:
+    batch_size: 20
+    weigthed_sampling_split_name: null
+
+model_registry: 
+  component_type_key: MODEL_REGISTRY
+  variant_key: DEFAULT
+
+model: 
+  component_type_key: MODEL
+  variant_key: DEFAULT
+  requirements:
+    - name: model_registry
+      component_name: model_registry
+      subscription: mlp
+  config:
+    model_definition:
+      hidden_layer_config:
+        - 50
+      n_inputs: 336
+      n_outputs: 1
+    model_type: MLP
+    seed: *seed_value
+    prediction_publication_keys: 
+      prediction_publication_key: *model_prediction_key_anchor
+
+optimizer:
+  component_type_key: OPTIMIZER
+  variant_key: DEFAULT
+  config:
+    optimizer_key: ADADELTA
+    params:
+      lr:
+        sweep: absolute
+        values:
+          - 0.01
+
+loss_function_registry: 
+  component_type_key: LOSS_FUNCTION_REGISTRY
+  variant_key: DEFAULT
+
+metric_registry: 
+  component_type_key: METRIC_REGISTRY
+  variant_key: DEFAULT
+
+prediction_postprocessing_registry: 
+  component_type_key: PREDICTION_POSTPROCESSING_REGISTRY
+  variant_key: DEFAULT
+
+train_component: 
+  component_type_key: TRAIN_COMPONENT
+  variant_key: DEFAULT
+  requirements:
+    - name: loss_function_registry
+      component_name: loss_function_registry
+    - name: prediction_postprocessing_registry
+      component_name: prediction_postprocessing_registry
+  config:
+    loss_fun_config:
+      prediction_subscription_key: *model_prediction_key_anchor
+      target_subscription_key: *target_class_key_anchor
+      key: BCEWithLogitsLoss
+      tag: binary_cross_entropy_with_logits_loss
+
+trainer:
+  component_type_key: TRAINER
+  variant_key: DEFAULT
+  requirements:
+    - name: train_component
+      component_name: train_component
+    - name: model
+      component_name: model
+      subscription: null
+    - name: data_loaders
+      component_name: data_loaders
+      subscription: train
+
+eval_component: 
+  component_type_key: EVAL_COMPONENT
+  variant_key: DEFAULT
+  requirements:
+    - name: model
+      component_name: model 
+      subscription: null
+    - name: data_loaders
+      component_name: data_loaders 
+      subscription: [train, val, test]
+    - name: loss_function_registry
+      component_name: loss_function_registry 
+    - name: metric_registry
+      component_name: metric_registry 
+    - name: prediction_postprocessing_registry
+      component_name: prediction_postprocessing_registry
+  config:
+    post_processors_config:
+      - key: "SIGMOIDAL"
+        prediction_subscription_key: *model_prediction_key_anchor
+        prediction_publication_key: *postprocessing_sigmoidal_key_anchor
+      - key: "BINARIZATION"
+        prediction_subscription_key: *postprocessing_sigmoidal_key_anchor
+        prediction_publication_key: *postprocessing_binarization_key_anchor
+    train_split_name: train
+    metrics_config:
+      - key: AUPR
+        params:
+          average: macro
+        prediction_subscription_key: *postprocessing_sigmoidal_key_anchor
+        target_subscription_key: *target_class_key_anchor
+        tag: AUPR_macro
+      - key: AUROC
+        params:
+          average: macro
+        prediction_subscription_key: *postprocessing_sigmoidal_key_anchor
+        target_subscription_key: *target_class_key_anchor
+        tag: AUROC_macro
+      - key: F1_SCORE
+        params:
+          average: macro
+        prediction_subscription_key: *postprocessing_binarization_key_anchor
+        target_subscription_key: *target_class_key_anchor
+        tag: F1_SCORE_macro
+      - key: F1_SCORE
+        params:
+          average: binary
+          pos_label: 1
+        prediction_subscription_key: *postprocessing_binarization_key_anchor
+        target_subscription_key: *target_class_key_anchor
+        tag: F1_SCORE_binary
+      - key: PRECISION
+        params:
+          average: macro
+        prediction_subscription_key: *postprocessing_binarization_key_anchor
+        target_subscription_key: *target_class_key_anchor
+        tag: PRECISION_macro
+      - key: PRECISION
+        params:
+          average: binary
+          pos_label: 1
+        prediction_subscription_key: *postprocessing_binarization_key_anchor
+        target_subscription_key: *target_class_key_anchor
+        tag: PRECISION_binary
+      - key: RECALL
+        params:
+          average: macro
+        prediction_subscription_key: *postprocessing_binarization_key_anchor
+        target_subscription_key: *target_class_key_anchor
+        tag: RECALL_macro
+      - key: RECALL
+        params:
+          average: binary
+          pos_label: 1
+        prediction_subscription_key: *postprocessing_binarization_key_anchor
+        target_subscription_key: *target_class_key_anchor
+        tag: RECALL_binary
+    loss_funs_config:
+      - key: BCEWithLogitsLoss
+        tag: binary_cross_entropy_with_logits_loss
+        prediction_subscription_key: *model_prediction_key_anchor
+        target_subscription_key: *target_class_key_anchor
+
+evaluator:
+  component_type_key: EVALUATOR
+  variant_key: DEFAULT
+  requirements:
+    - name: eval_component
+      component_name: eval_component

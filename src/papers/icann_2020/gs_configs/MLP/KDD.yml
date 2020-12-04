@@ -1,0 +1,389 @@
+global_config:
+  storage_connector_path: &storage_path_anchor ./file_storage/
+  seed: &seed_value 2
+  split_seed: &split_seed 2
+  target_class_key: &target_class_key_anchor target_class_key
+  model_prediction_key: &model_prediction_key_anchor model_raw_prediction
+  # postprocessing publication keys
+  postprocessing_sigmoidal_key: &postprocessing_sigmoidal_key_anchor postprocessing_sigmoidal_key
+  postprocessing_binarization_key: &postprocessing_binarization_key_anchor postprocessing_binarization_key
+
+kdd_factory:
+  component_type_key: DATASET_FACTORY
+  variant_key: KDD
+  config:
+    train_set_path: ../../../../raw_datasets/nsl_kdd/KDDTrain+.txt
+    test_set_path: ../../../../raw_datasets/nsl_kdd/KDDTest+.txt
+    attack_type_mapping_path: ../../../../raw_datasets/nsl_kdd/attack_types.json
+    feature_and_target_names_path: ../../../../raw_datasets/nsl_kdd/kddcup.names
+    storage_connector_path: *storage_path_anchor
+
+dataset_repository:
+  component_type_key: DATASET_REPOSITORY
+  variant_key: DEFAULT
+  config:
+    storage_connector_path: ./file_storage/
+  requirements:
+    - name: kdd_factory
+      component_name: kdd_factory
+
+dataset_iterators:
+  component_type_key: DATASET_ITERATORS
+  variant_key: DEFAULT
+  requirements:
+    - name: repository
+      component_name: dataset_repository
+  config:
+    dataset_identifier: kdd
+    splits: [train, test]
+
+filtered_labels_iterator:
+  component_type_key: FILTERED_LABELS_ITERATOR
+  variant_key: DEFAULT
+  requirements:
+    - name: iterators
+      component_name: dataset_iterators
+      subscriptions: [train, test]
+  config:
+    filtered_labels:
+      sweep: absolute
+      values:
+        # Outlier balanced (normal, R2L, U2R, DOS, PROBE), meaning these classes appear in both train and test set
+        - [back, buffer_overflow, ftp_write, guess_passwd, imap, ipsweep, land, loadmodule, multihop, neptune, nmap, normal, perl, phf, pod, portsweep, rootkit, satan, smurf, teardrop, warezmaster]
+        # Ouliter imbalanced (normal, U2R, R2L), meaning these classes appear in both train and test set
+        - [buffer_overflow, ftp_write, guess_passwd, imap, loadmodule, multihop, normal, perl, phf, rootkit, warezmaster] 
+        # Novelty balanced (normal, R2L, U2R, DOS, PROBE), meaning these classes only appear in the test set and not in the training set
+        - [apache2, httptunnel, mailbomb, mscan, named, normal, processtable, ps, saint, sendmail, snmpgetattack, snmpguess, sqlattack, udpstorm, worm, xlock, xsnoop, xterm] 
+        # Novelty imbalanced (normal, R2L, U2R), meaning these classes only appear in the test set and not in the training set
+        - [httptunnel, named, normal, ps, sendmail, snmpgetattack, snmpguess, sqlattack, xlock, xsnoop, xterm] 
+    applicable_splits: [test]
+
+mapped_to_main_attack_labels_iterator:
+  component_type_key: MAPPED_LABELS_ITERATOR
+  variant_key: DEFAULT
+  requirements:
+    - name: iterators
+      component_name: filtered_labels_iterator
+      subscriptions: [train, test]
+  config:
+    mappings:
+      - previous_labels:
+          [
+            snmpguess,
+            ftp_write,
+            xlock,
+            sendmail,
+            snmpgetattack,
+            imap,
+            spy,
+            multihop,
+            named,
+            phf,
+            warezclient,
+            httptunnel,
+            guess_passwd,
+            warezmaster,
+            xsnoop,
+          ]
+        new_label: R2L
+      - previous_labels:
+          [sqlattack, rootkit, buffer_overflow, xterm, loadmodule, ps, perl]
+        new_label: U2R
+      - previous_labels: [satan, mscan, ipsweep, nmap, saint, portsweep]
+        new_label: PROBE
+      - previous_labels:
+          [
+            mailbomb,
+            smurf,
+            worm,
+            udpstorm,
+            processtable,
+            apache2,
+            land,
+            teardrop,
+            pod,
+            neptune,
+            back,
+          ]
+        new_label: DOS
+    applicable_splits: [train, test]
+
+mapped_to_outlier_labels_iterator:
+  component_type_key: MAPPED_LABELS_ITERATOR
+  variant_key: DEFAULT
+  requirements:
+    - name: iterators
+      component_name: mapped_to_main_attack_labels_iterator
+      subscriptions: [train, test]
+  config:
+    mappings:
+      - previous_labels: [normal]
+        new_label: 0 # inlier
+      - previous_labels: [R2L, U2R, PROBE, DOS]
+        new_label: 1 # outlier / novelty
+    applicable_splits: [train, test]
+
+combined_dataset_iterators:
+  component_type_key: COMBINED_DATASET_ITERATORS
+  variant_key: DEFAULT
+  requirements:
+    - name: iterators
+      component_name: mapped_to_outlier_labels_iterator
+      subscription: [train, test]
+  config:
+    combine_configs:
+      full: [train, test]
+
+feature_encoded_iterators:
+  component_type_key: FEATURE_ENCODED_ITERATORS
+  variant_key: DEFAULT
+  requirements:
+    - name: iterators
+      component_name: combined_dataset_iterators
+      subscription: [train, test, full]
+  config:
+    applicable_splits: [train, test]
+    feature_encoding_configs:
+      - feature_type: categorical
+        train_split: full # for categorial variables we need to use the entire dataset
+        feature_names: [1, 2, 3, 6, 11, 20, 21]
+      - feature_type: continuous
+        train_split: train # continuous variables are scaled only with the train set
+        feature_names:
+          [
+            0,
+            4,
+            5,
+            7,
+            8,
+            9,
+            10,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36,
+            37,
+            38,
+            39,
+            40,
+          ]
+
+splitted_dataset_iterators:
+  component_type_key: SPLITTED_DATASET_ITERATORS
+  variant_key: RANDOM
+  requirements:
+    - name: iterators
+      component_name: feature_encoded_iterators
+      subscription: [train, test]
+  config:
+    split_configs:
+      train:
+        train: 0.7
+        val: 0.3
+    seed: *split_seed
+
+data_collator:
+  component_type_key: DATA_COLLATOR
+  variant_key: DEFAULT
+  config:
+    collator_type:
+      injectable:
+        id: id_mlp_standard_collator
+    collator_params:
+      target_publication_key: *target_class_key_anchor
+
+data_loaders:
+  component_type_key: DATA_LOADER
+  variant_key: DEFAULT
+  requirements:
+    - name: iterators
+      component_name: splitted_dataset_iterators
+      subscription: [train, val, test]
+    - name: data_collator
+      component_name: data_collator
+  config:
+    batch_size: 10
+    weigthed_sampling_split_name:
+      sweep: absolute
+      values: [train, null]
+
+model_registry:
+  component_type_key: MODEL_REGISTRY
+  variant_key: DEFAULT
+
+model:
+  component_type_key: MODEL
+  variant_key: DEFAULT
+  requirements:
+    - name: model_registry
+      component_name: model_registry
+      subscription: mlp
+  config:
+    model_definition:
+      hidden_layer_config:
+        - 50
+      n_inputs: 126
+      n_outputs: 1
+    model_type: MLP
+    seed: *seed_value
+    prediction_publication_keys:
+      prediction_publication_key: *model_prediction_key_anchor
+
+optimizer:
+  component_type_key: OPTIMIZER
+  variant_key: DEFAULT
+  config:
+    optimizer_key: ADADELTA
+    params:
+      lr:
+        sweep: absolute
+        values: [0.01, 0.001]
+
+loss_function_registry:
+  component_type_key: LOSS_FUNCTION_REGISTRY
+  variant_key: DEFAULT
+
+metric_registry:
+  component_type_key: METRIC_REGISTRY
+  variant_key: DEFAULT
+
+prediction_postprocessing_registry:
+  component_type_key: PREDICTION_POSTPROCESSING_REGISTRY
+  variant_key: DEFAULT
+
+train_component:
+  component_type_key: TRAIN_COMPONENT
+  variant_key: DEFAULT
+  requirements:
+    - name: loss_function_registry
+      component_name: loss_function_registry
+    - name: prediction_postprocessing_registry
+      component_name: prediction_postprocessing_registry
+  config:
+    loss_fun_config:
+      prediction_subscription_key: *model_prediction_key_anchor
+      target_subscription_key: *target_class_key_anchor
+      key: BCEWithLogitsLoss
+      tag: binary_cross_entropy_with_logits_loss
+
+trainer:
+  component_type_key: TRAINER
+  variant_key: DEFAULT
+  requirements:
+    - name: train_component
+      component_name: train_component
+    - name: model
+      component_name: model
+      subscription: null
+    - name: data_loaders
+      component_name: data_loaders
+      subscription: train
+
+eval_component:
+  component_type_key: EVAL_COMPONENT
+  variant_key: DEFAULT
+  requirements:
+    - name: model
+      component_name: model
+      subscription: null
+    - name: data_loaders
+      component_name: data_loaders
+      subscription: [train, val, test]
+    - name: loss_function_registry
+      component_name: loss_function_registry
+    - name: metric_registry
+      component_name: metric_registry
+    - name: prediction_postprocessing_registry
+      component_name: prediction_postprocessing_registry
+  config:
+    post_processors_config:
+      - key: "SIGMOIDAL"
+        prediction_subscription_key: *model_prediction_key_anchor
+        prediction_publication_key: *postprocessing_sigmoidal_key_anchor
+      - key: "BINARIZATION"
+        prediction_subscription_key: *postprocessing_sigmoidal_key_anchor
+        prediction_publication_key: *postprocessing_binarization_key_anchor
+    train_split_name: train
+    metrics_config:
+      - key: AUPR
+        params:
+          average: macro
+        prediction_subscription_key: *postprocessing_sigmoidal_key_anchor
+        target_subscription_key: *target_class_key_anchor
+        tag: AUPR_macro
+      - key: AUROC
+        params:
+          average: macro
+        prediction_subscription_key: *postprocessing_sigmoidal_key_anchor
+        target_subscription_key: *target_class_key_anchor
+        tag: AUROC_macro
+      - key: F1_SCORE
+        params:
+          average: macro
+        prediction_subscription_key: *postprocessing_binarization_key_anchor
+        target_subscription_key: *target_class_key_anchor
+        tag: F1_SCORE_macro
+      - key: F1_SCORE
+        params:
+          average: binary
+          pos_label: 1
+        prediction_subscription_key: *postprocessing_binarization_key_anchor
+        target_subscription_key: *target_class_key_anchor
+        tag: F1_SCORE_binary
+      - key: PRECISION
+        params:
+          average: macro
+        prediction_subscription_key: *postprocessing_binarization_key_anchor
+        target_subscription_key: *target_class_key_anchor
+        tag: PRECISION_macro
+      - key: PRECISION
+        params:
+          average: binary
+          pos_label: 1
+        prediction_subscription_key: *postprocessing_binarization_key_anchor
+        target_subscription_key: *target_class_key_anchor
+        tag: PRECISION_binary
+      - key: RECALL
+        params:
+          average: macro
+        prediction_subscription_key: *postprocessing_binarization_key_anchor
+        target_subscription_key: *target_class_key_anchor
+        tag: RECALL_macro
+      - key: RECALL
+        params:
+          average: binary
+          pos_label: 1
+        prediction_subscription_key: *postprocessing_binarization_key_anchor
+        target_subscription_key: *target_class_key_anchor
+        tag: RECALL_binary
+    loss_funs_config:
+      - key: BCEWithLogitsLoss
+        tag: binary_cross_entropy_with_logits_loss
+        prediction_subscription_key: *model_prediction_key_anchor
+        target_subscription_key: *target_class_key_anchor
+
+evaluator:
+  component_type_key: EVALUATOR
+  variant_key: DEFAULT
+  requirements:
+    - name: eval_component
+      component_name: eval_component

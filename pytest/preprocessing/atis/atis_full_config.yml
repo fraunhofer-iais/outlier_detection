@@ -1,0 +1,83 @@
+atis_factory: 
+  component_type_key: DATASET_FACTORY
+  variant_key: ATIS
+  config:
+    train_set_path: ./raw_datasets/atis/atis.train.csv
+    val_set_path: ./raw_datasets/atis/atis.dev.csv
+    test_set_path: ./raw_datasets/atis/atis.test.csv
+    storage_connector_path: ./file_storage/
+
+dataset_repository: 
+  component_type_key: DATASET_REPOSITORY
+  variant_key: DEFAULT
+  config:
+    storage_connector_path: ./file_storage/
+  requirements:
+    - name: atis_factory
+      component_name: atis_factory
+
+dataset_iterators: 
+  component_type_key: DATASET_ITERATORS
+  variant_key: DEFAULT
+  requirements:
+    - name: repository
+      component_name: dataset_repository
+  config:
+    dataset_identifier: atis
+    splits: [train, val, test]
+
+mapped_to_outlier_labels_iterator: 
+  component_type_key: MAPPED_LABELS_ITERATOR
+  variant_key: DEFAULT
+  requirements:
+    - name: iterators
+      component_name: dataset_iterators
+      subscriptions: [train, val, test]
+  config:
+    mappings:
+      - previous_labels:
+          [
+            atis_abbreviation,
+            atis_aircraft,
+            atis_airfare,
+            atis_airline,
+            atis_airport,
+            atis_capacity,
+            atis_city,
+            atis_distance,
+            atis_flight#atis_airfare,
+            atis_flight_no,
+            atis_flight_time,
+            atis_ground_fare,
+            atis_ground_service,
+            atis_meal,
+            atis_quantity,
+            atis_restriction,
+          ]
+        new_label: 1 # outliers
+      - previous_labels: [atis_flight]
+        new_label: 0 # inliers
+    applicable_splits: [train, val, test]
+
+data_collator: 
+  component_type_key: DATA_COLLATOR
+  variant_key: DEFAULT
+  config:
+    collator_type:
+      injectable:
+        id: id_mlp_standard_collator
+    collator_params:
+      target_publication_key: label_partition
+
+data_loaders: 
+  component_type_key: DATA_LOADER
+  variant_key: DEFAULT
+  requirements:
+    - name: iterators
+      component_name: mapped_to_outlier_labels_iterator
+      subscription: [train, val, test]
+    - name: data_collator
+      component_name: data_collator
+  config:
+    batch_size: 10
+    weigthed_sampling_split_name: null

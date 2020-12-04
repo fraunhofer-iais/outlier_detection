@@ -1,0 +1,327 @@
+global_config:
+  storage_connector_path: &storage_path_anchor ./file_storage/
+  seed: &seed_value 2
+  split_seed: &split_seed 2
+  # target keys
+  target_original_sample_key: &target_original_sample_key_anchor target_original_sample_key
+  target_class_key: &target_class_key_anchor target_class_key
+  # prediction keys
+  prediction_raw_classification_output_key: &prediction_raw_classification_output_key_anchor prediction_raw_classification_output_key
+  prediction_lp_loss_key: &prediction_lp_loss_key_anchor prediction_lp_loss_key
+  prediction_reconstruction_key: &prediction_reconstruction_key_anchor prediction_reconstruction_key
+  prediction_encoding_key: &prediction_encoding_key_anchor prediction_encoding_key
+
+  # postprocessing keys
+  postprocessing_sigmoidal_key: &postprocessing_sigmoidal_key_anchor postprocessing_sigmoidal_key
+  postprocessing_binarization_key: &postprocessing_binarization_key_anchor postprocessing_binarization_key
+
+atis_factory: 
+  component_type_key: DATASET_FACTORY
+  variant_key: ATIS
+  config:
+    train_set_path: ../../../../raw_datasets/atis/atis.train.csv
+    val_set_path: ../../../../raw_datasets/atis/atis.dev.csv
+    test_set_path: ../../../../raw_datasets/atis/atis.test.csv
+    storage_connector_path: *storage_path_anchor
+
+dataset_repository:
+  component_type_key: DATASET_REPOSITORY
+  variant_key: DEFAULT
+  config:
+    storage_connector_path: *storage_path_anchor
+  requirements:
+    - name: atis_factory
+      component_name: atis_factory
+
+dataset_iterators:
+  component_type_key: DATASET_ITERATORS
+  variant_key: DEFAULT
+  requirements:
+    - name: repository
+      component_name: dataset_repository
+  config:
+    dataset_identifier: atis
+    splits: [train, val, test]
+
+mapped_to_outlier_labels_iterator: 
+  component_type_key: MAPPED_LABELS_ITERATOR
+  variant_key: DEFAULT
+  requirements:
+    - name: iterators
+      component_name: dataset_iterators
+      subscriptions: [train, val, test]
+  config:
+    mappings:
+      - previous_labels:
+          [
+            atis_abbreviation,
+            atis_aircraft,
+            atis_airfare,
+            atis_airline,
+            atis_airport,
+            atis_capacity,
+            atis_city,
+            atis_distance,
+            atis_flight#atis_airfare,
+            atis_flight_no,
+            atis_flight_time,
+            atis_ground_fare,
+            atis_ground_service,
+            atis_meal,
+            atis_quantity,
+            atis_restriction,
+          ]
+        new_label: 1 # outliers
+      - previous_labels: [atis_flight]
+        new_label: 0 # inliers
+    applicable_splits: [train, val, test]
+
+data_collator: 
+  component_type_key: DATA_COLLATOR
+  variant_key: DEFAULT
+  config:
+    collator_type:
+      injectable:
+        id: id_sae_collator
+    collator_params:
+      target_original_sample_publication_key: *target_original_sample_key_anchor
+      target_class_publication_key: *target_class_key_anchor
+
+data_loaders: 
+  component_type_key: DATA_LOADER
+  variant_key: DEFAULT
+  requirements:
+    - name: iterators
+      component_name: mapped_to_outlier_labels_iterator
+      subscription: [train, val, test]
+    - name: data_collator
+      component_name: data_collator
+  config:
+    batch_size: 20
+    weigthed_sampling_split_name:
+      sweep: absolute
+      values: [train, null]
+
+model_registry: 
+  component_type_key: MODEL_REGISTRY
+  variant_key: DEFAULT
+
+model: 
+  component_type_key: MODEL
+  variant_key: DEFAULT
+  requirements:
+    - name: model_registry
+      component_name: model_registry
+      subscription: sae
+  config:
+    model_definition:
+      mode:
+        sweep: absolute
+        values: [SUPERVISED_AUTO_ENCODER_WITH_LOSS_READOUT, SUPERVISED_AUTO_ENCODER]
+      auto_encoder_layer_config: [50]
+      read_out_hidden_layer_config: [50]
+      n_inputs: 100
+      n_outputs: 1
+    model_type: SAE
+    seed: *seed_value
+    prediction_publication_keys: 
+      reconstruction_publication_key: *prediction_reconstruction_key_anchor
+      encoding_publication_key: *prediction_encoding_key_anchor
+      raw_classification_output_publication_key: *prediction_raw_classification_output_key_anchor
+      lp_loss_publication_key: *prediction_lp_loss_key_anchor
+
+optimizer:
+  component_type_key: OPTIMIZER
+  variant_key: DEFAULT
+  config:
+    optimizer_key: ADADELTA
+    params:
+      lr:
+        sweep: absolute
+        values: [0.01, 0.001]
+
+loss_function_registry: 
+  component_type_key: LOSS_FUNCTION_REGISTRY
+  variant_key: DEFAULT
+
+metric_registry: 
+  component_type_key: METRIC_REGISTRY
+  variant_key: DEFAULT
+
+prediction_postprocessing_registry: 
+  component_type_key: PREDICTION_POSTPROCESSING_REGISTRY
+  variant_key: DEFAULT
+
+train_component: 
+  component_type_key: TRAIN_COMPONENT
+  variant_key: DEFAULT
+  requirements:
+    - name: loss_function_registry
+      component_name: loss_function_registry
+    - name: prediction_postprocessing_registry
+      component_name: prediction_postprocessing_registry
+  config:
+    loss_fun_config:
+      target_class_subscription_key: *target_class_key_anchor
+      target_original_sample_subscription_key: *target_original_sample_key_anchor
+      prediction_reconstruction_subscription_key: *prediction_reconstruction_key_anchor
+      prediction_raw_classification_output_subscription_key: *prediction_raw_classification_output_key_anchor
+      outlier_weighting_factor:  
+        sweep: absolute
+        values: [-1, -0.1, -0.01]
+      adv_threshold:
+        sweep: absolute
+        values: [0.5, 1, 10]
+      outlier_label: 1
+      loss_lambda:
+        sweep: absolute
+        values: [0.95, 0.9, 0.8, 0.7, 0.5, 0.3, 0.1]
+      type: "BINNED"      
+      key: SAELoss
+      tag: sae_loss
+
+trainer:
+  component_type_key: TRAINER
+  variant_key: DEFAULT
+  requirements:
+    - name: train_component
+      component_name: train_component
+    - name: model
+      component_name: model
+      subscription: null
+    - name: data_loaders
+      component_name: data_loaders
+      subscription: train
+
+eval_component: 
+  component_type_key: EVAL_COMPONENT
+  variant_key: DEFAULT
+  requirements:
+    - name: model
+      component_name: model 
+      subscription: null
+    - name: data_loaders
+      component_name: data_loaders 
+      subscription: [train, val, test]
+    - name: loss_function_registry
+      component_name: loss_function_registry 
+    - name: metric_registry
+      component_name: metric_registry 
+    - name: prediction_postprocessing_registry
+      component_name: prediction_postprocessing_registry
+  config:
+    post_processors_config:
+      - key: "SIGMOIDAL"
+        prediction_subscription_key: *prediction_raw_classification_output_key_anchor
+        prediction_publication_key: *postprocessing_sigmoidal_key_anchor
+      - key: "BINARIZATION"
+        prediction_subscription_key: *postprocessing_sigmoidal_key_anchor
+        prediction_publication_key: *postprocessing_binarization_key_anchor
+    train_split_name: train
+    metrics_config:
+      - key: AUPR
+        params:
+          average: macro
+        tag: AUPR_macro
+        prediction_subscription_key: *postprocessing_sigmoidal_key_anchor
+        target_subscription_key: *target_class_key_anchor
+      - key: AUROC
+        params:
+          average: macro
+        tag: AUROC_macro
+        prediction_subscription_key: *postprocessing_sigmoidal_key_anchor
+        target_subscription_key: *target_class_key_anchor
+      - key: F1_SCORE
+        params:
+          average: macro
+        tag: F1_SCORE_macro
+        prediction_subscription_key: *postprocessing_binarization_key_anchor
+        target_subscription_key: *target_class_key_anchor
+      - key: F1_SCORE
+        params:
+          average: binary
+          pos_label: 1
+        tag: F1_SCORE_binary
+        prediction_subscription_key: *postprocessing_binarization_key_anchor
+        target_subscription_key: *target_class_key_anchor
+      - key: PRECISION
+        params:
+          average: macro
+        tag: PRECISION_macro
+        prediction_subscription_key: *postprocessing_binarization_key_anchor
+        target_subscription_key: *target_class_key_anchor
+      - key: PRECISION
+        params:
+          average: binary
+          pos_label: 1
+        tag: PRECISION_binary
+        prediction_subscription_key: *postprocessing_binarization_key_anchor
+        target_subscription_key: *target_class_key_anchor
+      - key: RECALL
+        params:
+          average: macro
+        tag: Recall_macro
+        prediction_subscription_key: *postprocessing_binarization_key_anchor
+        target_subscription_key: *target_class_key_anchor
+      - key: RECALL
+        params:
+          average: binary
+          pos_label: 1
+        tag: RECALL_binary
+        prediction_subscription_key: *postprocessing_binarization_key_anchor
+        target_subscription_key: *target_class_key_anchor
+    loss_funs_config:
+      - target_class_subscription_key: *target_class_key_anchor
+        target_original_sample_subscription_key: *target_original_sample_key_anchor
+        prediction_reconstruction_subscription_key: *prediction_reconstruction_key_anchor
+        prediction_raw_classification_output_subscription_key: *prediction_raw_classification_output_key_anchor
+        outlier_weighting_factor: -1
+        adv_threshold: 10
+        outlier_label: 1
+        loss_lambda: 0.5
+        type: "BINNED"      
+        key: SAELoss
+        tag: train_loss
+      - key: LPLoss
+        target_subscription_key: *target_original_sample_key_anchor
+        prediction_subscription_key: *prediction_reconstruction_key_anchor
+        class_selection_fun_params:
+          selected_class: 0
+          target_subscription_key: *target_class_key_anchor
+        exponent: 2
+        root: 1
+        tag: reconstruction_loss_inlier
+      - key: LPLoss
+        target_subscription_key: *target_original_sample_key_anchor
+        prediction_subscription_key: *prediction_reconstruction_key_anchor
+        class_selection_fun_params:
+          selected_class: 1
+          target_subscription_key: *target_class_key_anchor
+        exponent: 2
+        root: 1
+        tag: reconstruction_loss_outlier
+      - key: LPLossScaled
+        target_subscription_key: *target_original_sample_key_anchor
+        prediction_subscription_key: *prediction_reconstruction_key_anchor
+        class_selection_fun_params:
+          selected_class: 0
+          target_subscription_key: *target_class_key_anchor
+        exponent: 2
+        root: 1
+        tag: scaled_reconstruction_loss_inlier
+      - key: LPLossScaled
+        target_subscription_key: *target_original_sample_key_anchor
+        prediction_subscription_key: *prediction_reconstruction_key_anchor
+        class_selection_fun_params:
+          selected_class: 1
+          target_subscription_key: *target_class_key_anchor
+        exponent: 2
+        root: 1
+        tag: scaled_reconstruction_loss_outlier
+
+evaluator:
+  component_type_key: EVALUATOR
+  variant_key: DEFAULT
+  requirements:
+    - name: eval_component
+      component_name: eval_component

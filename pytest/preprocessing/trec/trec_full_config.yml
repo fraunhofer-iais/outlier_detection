@@ -1,0 +1,90 @@
+dataset_repository: 
+  component_type_key: DATASET_REPOSITORY
+  variant_key: DEFAULT
+  config:
+    storage_connector_path: ./file_storage/
+
+dataset_iterators: 
+  component_type_key: DATASET_ITERATORS
+  variant_key: DEFAULT
+  requirements:
+    - name: repository
+      component_name: dataset_repository
+  config:
+    dataset_identifier: trec
+    splits: [train, test]
+  
+mapped_to_main_labels_iterator: 
+  component_type_key: MAPPED_LABELS_ITERATOR
+  variant_key: DEFAULT
+  requirements:
+    - name: iterators
+      component_name: dataset_iterators
+      subscriptions: [train, test]
+  config:
+    mappings:
+      - previous_labels: [ABBR:abb, ABBR:exp]
+        new_label: ABBR
+      - previous_labels: [DESC:def, DESC:desc, DESC:manner, DESC:reason]
+        new_label: DESC
+      - previous_labels: [ENTY:animal, ENTY:body, ENTY:color, ENTY:cremat, ENTY:currency, ENTY:dismed, ENTY:event, ENTY:food, ENTY:instru, ENTY:lang, ENTY:letter, ENTY:other, ENTY:plant, ENTY:product, ENTY:religion, ENTY:sport, ENTY:substance, ENTY:symbol, ENTY:techmeth, ENTY:termeq, ENTY:veh, ENTY:word]
+        new_label: ENTY
+      - previous_labels: [HUM:desc, HUM:gr, HUM:ind, HUM:title]
+        new_label: HUM
+      - previous_labels: [LOC:city, LOC:country, LOC:mount, LOC:other, LOC:state]
+        new_label: LOC
+      - previous_labels: [NUM:code, NUM:count, NUM:date, NUM:dist, NUM:money, NUM:ord, NUM:other, NUM:perc, NUM:period, NUM:speed, NUM:temp, NUM:volsize, NUM:weight]
+        new_label: NUM
+    applicable_splits: [train, test]
+
+
+mapped_to_outlier_labels_iterator: 
+  component_type_key: MAPPED_LABELS_ITERATOR
+  variant_key: DEFAULT
+  requirements:
+    - name: iterators
+      component_name: mapped_to_main_labels_iterator
+      subscriptions: [train, test]
+  config:
+    mappings:
+      - previous_labels: [ABBR]
+        new_label: 1  # outliers
+      - previous_labels: [DESC, ENTY, HUM, LOC, NUM]
+        new_label: 0  # inliers
+    applicable_splits: [train, test]
+
+splitted_dataset_iterators: 
+  component_type_key: SPLITTED_DATASET_ITERATORS
+  variant_key: RANDOM
+  requirements:
+    - name: iterators
+      component_name: mapped_to_outlier_labels_iterator
+      subscription: [train, test]
+  config:
+    split_configs:
+      train:
+        train: 0.7
+        val: 0.3
+
+data_collator: 
+  component_type_key: DATA_COLLATOR
+  variant_key: DEFAULT
+  config:
+    collator_type:
+      injectable:
+        id: id_mlp_standard_collator
+    collator_params:
+      target_publication_key: label_partition
+
+data_loaders: 
+  component_type_key: DATA_LOADER
+  variant_key: DEFAULT
+  requirements:
+    - name: iterators
+      component_name: splitted_dataset_iterators
+      subscription: [train, val, test]
+    - name: data_collator
+      component_name: data_collator
+  config:
+    batch_size: 10
+    weigthed_sampling_split_name: null
