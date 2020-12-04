@@ -20,7 +20,8 @@ setup(
                       "nltk >=3.4.5",
                       "flair",
                       "datastack",
-                      "mlgym"
+                      "mlgym",
+                      "outlier-hub"
                       ],
     python_requires=">=3.7"
 )
