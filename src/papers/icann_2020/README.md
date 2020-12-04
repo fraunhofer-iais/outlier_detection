@@ -13,7 +13,7 @@ The script itself can be adapted to train for a different number of epochs (`num
 Please, take into account that we ran the full gridsearch on 16 Tesla GPUs for multiple days. So instead of running the experiments yourself, we are planning to publish the raw [DashifyML](https://github.com/dashifyML/dashifyML) results in the near future. 
 
 ```bash
-cd src 
+cd starters 
 sh train_models.sh <model_type> <dataset>
 ```
 
